@@ -117,6 +117,9 @@ __BEGIN_DECLS
  * "sup_sampling_rates=44100|48000" */
 #define AUDIO_PARAMETER_STREAM_SUP_SAMPLING_RATES "sup_sampling_rates"
 
+// star add for raw data output
+#define AUDIO_PARAMETER_RAW_DATA_OUT "raw_data_output"
+
 /* Query handle fm parameter*/
 #define AUDIO_PARAMETER_KEY_HANDLE_FM "handle_fm"
 
@@ -129,6 +132,8 @@ __BEGIN_DECLS
 /* Query if surround sound recording is supported */
 #define AUDIO_PARAMETER_KEY_SSR "ssr"
 
+/* Query if a2dp  is supported */
+#define AUDIO_PARAMETER_KEY_HANDLE_A2DP_DEVICE "isA2dpDeviceSupported"
 /**************************************/
 
 /* common audio stream configuration parameters */
@@ -139,6 +144,9 @@ struct audio_config {
 };
 
 typedef struct audio_config audio_config_t;
+#ifdef QCOM_HARDWARE
+typedef struct buf_info;
+#endif
 
 /* common audio stream parameters and operations */
 struct audio_stream {
@@ -302,6 +310,18 @@ struct audio_stream_out {
      */
     int (*set_observer)(const struct audio_stream_out *stream,
                                void *observer);
+    /**
+     * Get the physical address of the buffer allocated in the
+     * driver
+     */
+    int (*get_buffer_info) (const struct audio_stream_out *stream,
+                                struct buf_info **buf);
+    /**
+     * Check if next buffer is available. Waits until next buffer is
+     * available
+     */
+    int (*is_buffer_available) (const struct audio_stream_out *stream,
+                                     int *isAvail);
 #endif
 
 };
@@ -382,6 +402,8 @@ static inline size_t audio_stream_frame_size(struct audio_stream *s)
     size_t chan_samp_sz;
     uint32_t chan_mask = s->get_channels(s);
     int format = s->get_format(s);
+    char *tmpparam;
+    int isParamEqual;
 
 #ifdef QCOM_HARDWARE
     if (audio_is_input_channel(chan_mask)) {
@@ -389,7 +411,10 @@ static inline size_t audio_stream_frame_size(struct audio_stream *s)
                       AUDIO_CHANNEL_IN_MONO );
     }
 
-    if(!strcmp(s->get_parameters(s, "voip_flag"),"voip_flag=1")) {
+    tmpparam = s->get_parameters(s, "voip_flag");
+    isParamEqual = !strcmp(tmpparam,"voip_flag=1");
+    free(tmpparam);
+    if(isParamEqual) {
         if(format != AUDIO_FORMAT_PCM_8_BIT)
             return popcount(chan_mask) * sizeof(int16_t);
         else
@@ -591,6 +616,14 @@ static inline int audio_hw_device_close(struct audio_hw_device* device)
 }
 
 #ifdef QCOM_HARDWARE
+/** Structure to save buffer information for applying effects for
+ *  LPA buffers */
+struct buf_info {
+    int bufsize;
+    int nBufs;
+    int **buffers;
+};
+
 #ifdef __cplusplus
 /**
  *Observer class to post the Events from HAL to Flinger
